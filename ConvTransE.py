@@ -15,7 +15,7 @@ class ConvTransE(torch.nn.Module):
         self.inp_drop = torch.nn.Dropout(input_dropout)
         self.hidden_drop = torch.nn.Dropout(hidden_dropout)
         self.feature_map_drop = torch.nn.Dropout(feature_map_dropout)
-
+        #self.t_emb_dim = 36
         self.conv1 = torch.nn.Conv1d(2, channels, kernel_size, stride=1,
                                padding=int(math.floor(kernel_size / 3)))  # kernel size is odd, then padding = math.floor(kernel_size/2)
         self.bn0 = torch.nn.BatchNorm1d(2)
@@ -30,17 +30,19 @@ class ConvTransE(torch.nn.Module):
         nn.init.xavier_uniform_(self.ent_embeds.weight)
         nn.init.xavier_uniform_(self.rel_embeds.weight)
 
-    def get_ent_embedding(self, ents):
-        return self.ent_embeds(ents)
-    def get_rel_embedding(self,rels):
+    def get_rel_embedding(self, rels):
         return self.rel_embeds(rels)
+    def get_ent_embedding_t(self, ents, year, month, day):
+        return self.ent_embeds(ents) #self.get_time_embedd(ents, year, month, day)
+    def get_ent_embedding(self,ents):
+        return self.ent_embeds(ents)
 
     def get_all_ent_embedding(self):
         return self.ent_embeds.weight
 
-    def forward(self, query_ent_embeds, query_rel_embeds):
-        batch_size = query_ent_embeds.size(0)
-        stacked_inputs = torch.cat((query_ent_embeds.unsqueeze(1), query_rel_embeds.unsqueeze(1)), dim=1)
+    def forward(self, query_rel_embeds, time_embs):
+        batch_size = query_rel_embeds.size(0)
+        stacked_inputs = torch.cat((query_rel_embeds.unsqueeze(1), time_embs.unsqueeze(1)), dim=1)
         stacked_inputs = self.bn0(stacked_inputs)
         x = self.inp_drop(stacked_inputs)
 

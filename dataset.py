@@ -10,13 +10,16 @@ import copy
 import time
 import numpy as np
 from random import shuffle
-from scripts import shredFacts
+from collections import defaultdict
 
 class Dataset:
     """Implements the specified dataloader"""
     def __init__(self,
                  ds_name):
-
+        """
+        Params:
+                ds_name : name of the dataset
+        """
         self.name = ds_name
         # self.ds_path = "<path-to-dataset>" + ds_name.lower() + "/"
         self.ds_path = "datasets/" + ds_name.lower() + "/"
@@ -25,6 +28,7 @@ class Dataset:
         self.data = {"train": self.readFile(self.ds_path + "train.txt"),
                      "valid": self.readFile(self.ds_path + "valid.txt"),
                      "test":  self.readFile(self.ds_path + "test.txt")}
+
 
         self.start_batch = 0
         self.all_facts_as_tuples = None
@@ -35,20 +39,26 @@ class Dataset:
 
         for spl in ["train", "valid", "test"]:
             self.data[spl] = np.array(self.data[spl]).astype(int)
+        self.skip_dict = self.get_skipdict(self.data['train'].tolist()+self.data['valid'].tolist() + self.data['test'].tolist())
+    def readFile(self,
+                 filename):
 
-    def readFile(self, filename):
         with open(filename, "r") as f:
             data = f.readlines()
+
         facts = []
         for line in data:
             elements = line.strip().split("\t")
+
             head_id =  self.getEntID(elements[0])
             rel_id  =  self.getRelID(elements[1])
             tail_id =  self.getEntID(elements[2])
             timestamp = elements[3]
+
             facts.append([head_id, rel_id, tail_id, timestamp])
 
         return facts
+
 
     def convertTimes(self):
         """
@@ -60,6 +70,8 @@ class Dataset:
                 self.data[split][i] = self.data[split][i][:-1]
                 date = list(map(float, fact_date.split("-")))
                 self.data[split][i] += date
+
+
 
     def numEnt(self):
 
@@ -84,16 +96,6 @@ class Dataset:
         self.rel2id[rel_name] = len(self.rel2id)
         return self.rel2id[rel_name]
 
-
-    def nextPosBatch(self, batch_size):
-        if self.start_batch + batch_size > len(self.data["train"]):
-            ret_facts = self.data["train"][self.start_batch : ]
-            self.start_batch = 0
-        else:
-            ret_facts = self.data["train"][self.start_batch : self.start_batch + batch_size]
-            self.start_batch += batch_size
-        return ret_facts
-
     @staticmethod
     def get_reverse_quadruples_array(quadruples, num_r):
         quads = np.copy(quadruples)
@@ -105,18 +107,28 @@ class Dataset:
         quads_r[:, 4] = quads[:, 4]
         quads_r[:, 5] = quads[:, 5]
         return np.concatenate((quads, quads_r),axis=1).reshape(int(quads_r.shape[0] * 2),6)
+    def get_skipdict(self, quadruples):
+        """Used for time-dependent filtered metrics.
+        return: a dict [key -> (entity, relation, timestamp),  value -> a set of ground truth entities]
+        """
+        filters = defaultdict(set)
+        for src, rel, dst, year, month, day in quadruples:
+            filters[(src, rel)].add(dst)
+            filters[(dst, rel+self.numRel())].add(src)
+        return filters
 
 class QuadruplesDataset(Dataset):
-    def __init__(self, quadruples, baseDataset, dataset_type='train'):
+    def __init__(self, quadruples, dataset, dataset_type='train'):
         self.quadruples = quadruples
         self.PAD_TIME = -1
-        self.num_r = baseDataset.numRel()
+        self.num_r = dataset.numRel()
         self.dataset_type = dataset_type
-
+        self.dataset = dataset
     def __len__(self):
         return len(self.quadruples)
 
     def __getitem__(self, idx):
         quad = self.quadruples[idx]
         head_entity, relation, tail_entity, year, month, day = quad[0], quad[1], quad[2], quad[3], quad[4], quad[5]
-        return head_entity, relation, tail_entity, year, month, day
+        neg = np.random.randint(self.dataset.numEnt(), size=(500))
+        return head_entity, relation, tail_entity, year, month, day, neg
