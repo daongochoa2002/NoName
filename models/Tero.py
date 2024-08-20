@@ -12,8 +12,6 @@ class Tero(torch.nn.Module):
         self.config = config
         self.n_ent = config.n_ent
         self.n_rel = config.n_rel
-        self.s_emb_dim = config.s_emb_dim
-        self.t_emb_dim = config.t_emb_dim
         self.d_model = config.d_model
         self.dropout_rate = config.dropout
 
@@ -34,7 +32,7 @@ class Tero(torch.nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.relu = nn.ReLU()
 
-    def train_forward(self, sub, rel, obj, year, month, day):
+    def train_forward(self, sub, rel, obj, year, month, day,neg):
         bs = sub.shape[0]
         neg = torch.randint(0, self.n_ent, (bs, 500)).to(sub.device)
         ent_type = torch.cat([obj.unsqueeze(1),neg],dim = 1)

@@ -96,8 +96,6 @@ def test(model, testloader, skip_dict, device):
 
     for metric in logs[0].keys():
         metrics[metric] = sum([log[metric] for log in logs]) / len(logs)
-    metrics['Time MSE'] = TimeMSE / len(testloader.dataset)
-    metrics['Time MAE'] = TimeMAE / len(testloader.dataset)
     return metrics
 
 
@@ -185,7 +183,7 @@ def main(args):
     )
 
     testQuadruples = dataset.get_reverse_quadruples_array(dataset.data['test'],dataset.numRel())
-    testQuadDataset = QuadruplesDataset(validQuadruples, dataset, 'test')
+    testQuadDataset = QuadruplesDataset(testQuadruples, dataset, 'test')
     testDataLoader = DataLoader(
         testQuadDataset,
         shuffle=False,

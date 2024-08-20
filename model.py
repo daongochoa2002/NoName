@@ -15,15 +15,11 @@ class NoName(nn.Module):
         self.n_rel = config.n_rel
         self.d_model = config.d_model
         self.dropout_rate = config.dropout
-        self.PAD_TIME = -1
-        self.PAD_ENTITY = self.n_ent - 1
         self.noise_scale = noise_scale
         self.noise_min = noise_min
         self.noise_max = noise_max
         self.steps = steps
-
         self.dropout = nn.Dropout(self.dropout_rate)
-
         self.layer_norm = nn.LayerNorm(self.d_model, eps=1e-6)
 
         self.encoder1 = ConvTransE(self.n_ent, self.n_rel,self.d_model, self.dropout_rate, self.dropout_rate, self.dropout_rate)
@@ -43,7 +39,6 @@ class NoName(nn.Module):
 
         self.lp_loss_fn = nn.CrossEntropyLoss()
 
-
     def get_betas(self):
         start = self.noise_scale * self.noise_min
         end = self.noise_scale * self.noise_max
@@ -54,7 +49,7 @@ class NoName(nn.Module):
         for i in range(1, self.steps):
           betas.append(min(1 - alpha_bar[i] / alpha_bar[i-1], 0.999))
         return np.array(betas)
-    def forward(self, heads, rels, tails, year, month, day):
+    def forward(self, heads, rels, tails):
         bs = heads.size(0)
         rels_embeds_real = self.encoder1.get_rel_embedding(rels)
         heads_embeds_real = self.encoder1.get_ent_embedding(heads)
@@ -68,16 +63,10 @@ class NoName(nn.Module):
         loss = self.lp_loss_fn(intens, answers)
         return loss
 
-
-    def ents_score(self, intens, type, local_weight=1.):
-        return intens[:, :-1]
-
-
     def q_sample(self, x_start, t, noise=None):
       if noise is None:
         noise = torch.randn_like(x_start)
       return self._extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start + self._extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape) * noise
-
 
     def _extract_into_tensor(self, arr, timesteps, broadcast_shape):
       arr = arr.cuda()
@@ -86,10 +75,9 @@ class NoName(nn.Module):
         res = res[..., None]
       return res.expand(broadcast_shape)
 
-
     def train_forward(self, heads, rels, tails, year, month, day, neg):
         heads_embs1, rels_embs1, x_start1, \
-        heads_embs2, rels_embs2, x_start2 = self.forward(heads, rels, tails, year, month, day)
+        heads_embs2, rels_embs2, x_start2 = self.forward(heads, rels, tails)
         bs = heads.size(0)
         ts = torch.randint(0, self.steps,(bs,))
         d_img = torch.sin(self.w1.view(1, -1) * day.unsqueeze(1))
@@ -130,28 +118,6 @@ class NoName(nn.Module):
         ent_embs2 = 1 / self.sqrt_alphas_cumprod[ts].unsqueeze(1).unsqueeze(1) * ent_embs2 - \
                         torch.sqrt(1 / self.alphas_cumprod[ts].unsqueeze(1).unsqueeze(1) - 1) * self.denoiser2(ent_embs2, time_embs.unsqueeze(1), condition_emb2.unsqueeze(1))
 
-
-        #ent_type = torch.arange(self.n_ent, device=query_ent_embeds.device).unsqueeze(0).repeat(o_ent.size(0), 1)
-        #mask = (global_type != obj.unsqueeze(1).repeat(1, self.n_ent))
-        #print(pos_x_t.shape)
-        #pos_x_t = pos_x_t.float()
-        #neg_x_t = neg_x_t.double()
-        #pos_dist = (condition_emb.multiply(x_start) - condition_emb.multiply(pos_x_t)).sum(dim=-1)
-        #neg_dist = (condition_emb.multiply(x_start).unsqueeze(1) - condition_emb.unsqueeze(1).multiply(neg_x_t)).sum(dim=-1)
-        #pos_dist = torch.norm(condition_emb.multiply(x_start) - condition_emb.multiply(pos_x_t), dim=-1)
-        #neg_dist = torch.norm(condition_emb.multiply(x_start).unsqueeze(1) - condition_emb.unsqueeze(1).multiply(neg_x_t), dim=-1)
-        #type_intes = self.ent_decoder(query_ent_embeds,query_rel_embeds,self.ent_embeds.weight)
-        #print(denoised_neg_x.shape)
-        #a = - torch.norm(query_ent_embeds + query_rel_embeds - x_start, dim=1)
-        #pos_dist = torch.linalg.norm(x_start - pos_x_t, dim=1)
-        #neg_dist = torch.linalg.norm(x_start.unsqueeze(1) - neg_x_t , dim= -1)
-        #print(neg_dist.shape)
-        #pos_dist = torch.norm(query_ent_embeds + query_rel_embeds - x_start, dim=1)\
-        #                             - torch.norm(query_ent_embeds + query_rel_embeds - pos_x_t, dim=1)
-        #neg_dist = torch.norm(query_ent_embeds + query_rel_embeds - x_start, dim=1).unsqueeze(1)\
-        #                             - torch.norm(query_ent_embeds.unsqueeze(1) + query_rel_embeds.unsqueeze(1) - neg_x_t, dim=-1)
-        #pos_dist = type_intes.
-        #loss_lp = - torch.log(torch.sigmoid(self.gamma - pos_dist)) - torch.sum(torch.log(torch.sigmoid(neg_dist - self.gamma)), dim=1)
         condition_emb1 = (heads_embs1 + rels_embs1) * condition_emb1
         condition_emb2 = (heads_embs2 - rels_embs2) * condition_emb2
         ent_type = torch.cat([tails.unsqueeze(1),neg],dim = 1)
@@ -165,12 +131,9 @@ class NoName(nn.Module):
         return loss_lp.mean()
 
 
-    def test_forward(self, sub, rels, tails, year, month, day, local_weight=1.):
-        heads_embs1, rels_embs1, x_start_real, \
-        heads_embs2, rels_embs2, x_start_img  = self.forward(sub, rels, tails, year, month, day)
-          #condition_emb = self.encoder(query_ent_embeds,query_rel_embeds)
-          #condition_emb = query_ent_embeds * query_rel_embeds
-          #condition_emb = self.dropout(query_ent_embeds * time + query_rel_embeds * time)
+    def test_forward(self, sub, rels, tails, year, month, day):
+        heads_embs1, rels_embs1, _, \
+        heads_embs2, rels_embs2, _  = self.forward(sub, rels, tails)
         d_img = torch.sin(self.w1.view(1, -1) * day.unsqueeze(1))
         d_real = torch.cos(self.w2.view(1, -1) * day.unsqueeze(1))
         condition_emb1 = self.encoder1(heads_embs1 + rels_embs2, d_real)
@@ -213,13 +176,5 @@ class NoName(nn.Module):
                       - condition_emb1.mm(ent_embeds_real.transpose(0,1))\
                       + self.dropout(condition_emb2.multiply(x_t2).unsqueeze(1)).sum(dim=-1)\
                       - condition_emb2.mm(ent_embeds_img.transpose(0,1))) /2
-        #scores = (torch.norm(condition_emb - x_t, dim=1).unsqueeze(1) - torch.norm(condition_emb.unsqueeze(1) - ent_embeds, dim=-1))
-        #print(x_t)
-        #scores =  torch.norm((condition_emb * x_t).unsqueeze(1) - condition_emb.unsqueeze(1) * ent_embeds,dim=-1)
-        #scores =  condition_emb.multiply(x_t).sum(dim=-1).unsqueeze(1) - condition_emb.unsqueeze(1).multiply(ent_embeds).sum(dim=-1)
-        #scores = torch.linalg.norm(x_t.unsqueeze(1) - self.ent_embeds.weight.unsqueeze(0), dim=-1)
-        #scores = torch.norm(query_ent_embeds + query_rel_embeds - x_t, dim=1).unsqueeze(1) - \
-        #                torch.norm(query_ent_embeds.unsqueeze(1) + query_rel_embeds.unsqueeze(1) - self.ent_embeds.weight.unsqueeze(0), dim=-1)
-        #scores = self.ent_decoder(query_ent_embeds,query_rel_embeds, x_t,self.ent_embeds.weight)
 
         return scores
