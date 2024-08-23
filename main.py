@@ -225,8 +225,8 @@ def main(args):
 
                 for delta_t in range(args.forecasting_t_win_size):
                     delta_t = delta_t + 1
-                    testDataLoader.dataset.delta_t = delta_t
-                    metrics = test(model, testDataLoader, dataset.skip_dict, device)
+                    validDataLoader.dataset.delta_t = delta_t
+                    metrics = test(model, validDataLoader, dataset.skip_dict, device)
 
                     for mode in metrics.keys():
                         logging.info('Delta_t {} Valid {} : {}'.format(delta_t, mode, metrics[mode]))
@@ -237,8 +237,8 @@ def main(args):
         logging.info('Start Testing......')
         for delta_t in range(args.forecasting_t_win_size):
             delta_t = delta_t + 1
-            validDataLoader.dataset.delta_t = delta_t
-            metrics = test(model, validDataLoader, dataset.skip_dict, device)
+            testDataLoader.dataset.delta_t = delta_t
+            metrics = test(model, testDataLoader, dataset.skip_dict, device)
             for mode in metrics.keys():
                 logging.info('Delta_t {} Test {} : {}'.format(delta_t, mode, metrics[mode]))
 

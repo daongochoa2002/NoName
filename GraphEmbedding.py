@@ -2,11 +2,11 @@ import torch
 import math
 import torch.nn as nn
 import torch.nn.functional as F
-class ConvTransE(torch.nn.Module):
+class GraphEmbedding(torch.nn.Module):
 
     def __init__(self, num_entities, num_relations, embedding_dim, input_dropout=0, hidden_dropout=0, feature_map_dropout=0, channels=50, kernel_size=3, use_bias=True):
 
-        super(ConvTransE, self).__init__()
+        super(GraphEmbedding, self).__init__()
         self.n_ent = num_entities
         self.n_rel = num_relations
         self.d_model = embedding_dim
@@ -15,7 +15,7 @@ class ConvTransE(torch.nn.Module):
         self.inp_drop = torch.nn.Dropout(input_dropout)
         self.hidden_drop = torch.nn.Dropout(hidden_dropout)
         self.feature_map_drop = torch.nn.Dropout(feature_map_dropout)
-        #self.t_emb_dim = 36
+
         self.conv1 = torch.nn.Conv1d(2, channels, kernel_size, stride=1,
                                padding=int(math.floor(kernel_size / 3)))  # kernel size is odd, then padding = math.floor(kernel_size/2)
         self.bn0 = torch.nn.BatchNorm1d(2)
@@ -40,9 +40,9 @@ class ConvTransE(torch.nn.Module):
     def get_all_ent_embedding(self):
         return self.ent_embeds.weight
 
-    def forward(self, query_rel_embeds, time_embs):
-        batch_size = query_rel_embeds.size(0)
-        stacked_inputs = torch.cat((query_rel_embeds.unsqueeze(1), time_embs.unsqueeze(1)), dim=1)
+    def forward(self, query_embeds, time_embs):
+        batch_size = query_embeds.size(0)
+        stacked_inputs = torch.cat((query_embeds.unsqueeze(1), time_embs.unsqueeze(1)), dim=1)
         stacked_inputs = self.bn0(stacked_inputs)
         x = self.inp_drop(stacked_inputs)
 
