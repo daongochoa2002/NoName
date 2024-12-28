@@ -19,24 +19,24 @@ def parse_args(args=None):
 
     parser.add_argument('--data_root', type=str, default='data')
     parser.add_argument('--output_root', type=str, default='output')
-    parser.add_argument('--model_name', type=str, default='GHT')
+    parser.add_argument('--model_name', type=str, default='DifTKG')
     parser.add_argument('--batch_size', type=int, default=256)
 
-    parser.add_argument('--num_works', type=int, default=8)
+    parser.add_argument('--num_works', type=int, default=2)
 
     parser.add_argument('--grad_norm', type=float, default=1.0)
-    parser.add_argument('--weight_decay', type=float, default=0.00001)
+    parser.add_argument('--weight_decay', type=float, default=0.000001)
 
-    parser.add_argument('--d_model', default=100, type=int)
+    parser.add_argument('--d_model', default=200, type=int)
     parser.add_argument('--data', default='icews14', type=str)
-    parser.add_argument('--max_epochs', default=30, type=int)
-    parser.add_argument('--lr', default=0.003, type=float)
+    parser.add_argument('--max_epochs', default=31, type=int)
+    parser.add_argument('--lr', default=0.001, type=float)
     parser.add_argument('--do_train', action='store_true')
     parser.add_argument('--do_test', action='store_true')
-    parser.add_argument('--valid_epoch', default=2, type=int)
-    parser.add_argument('--dropout', default=0.2, type=float)
+    parser.add_argument('--valid_epoch', default=3, type=int)
+    parser.add_argument('--dropout', default=0.1, type=float)
 
-    parser.add_argument('--load_model_path', default='output', type=str)
+    parser.add_argument('--load_model_path', default='output1', type=str)
 
     parser.add_argument('--forecasting_t_win_size', default=1, type=int)
 
@@ -44,12 +44,14 @@ def parse_args(args=None):
 
     return parser.parse_args(args)
 
-def test(model, testloader, skip_dict, device):
+def test(model, testloader, dataset, device):
     model.eval()
     ranks = []
     logs = []
+    #device = 'cpu'
+    model.to(device)
     with torch.no_grad():
-        for sub, rel, obj, year, month, day,neg in tqdm(testloader):
+        for sub, rel, obj, year,month,day, neg in tqdm(testloader):
             sub = sub.to(device, non_blocking=True)
             rel = rel.to(device, non_blocking=True)
             obj = obj.to(device, non_blocking=True)
@@ -71,18 +73,31 @@ def test(model, testloader, skip_dict, device):
 
                 predict_score = scores[i].tolist()
                 answer_prob = predict_score[dst_i]
-                for e in skip_dict[(src_i, rel_i)]:
+                for e in dataset.skip_dict[(src_i, rel_i)]:
                     if e != dst_i:
                         predict_score[e] = -1e6
                 predict_score.sort(reverse=True)
                 filter_rank = predict_score.index(answer_prob) + 1
 
+                predict_score = scores[i].tolist()
+                for e in dataset.time_skip_dict[(src_i, rel_i,year_i, month_i, day_i)]:
+                    if e != dst_i:
+                        predict_score[e] = -1e6
+                predict_score.sort(reverse=True)
+                filter_rank1 = predict_score.index(answer_prob) + 1
+
                 logs.append({
-                        'Filter MR': filter_rank,
-                        'Filter MRR': 1.0 / filter_rank,
-                        'Filter HITS@1': 1.0 if filter_rank <= 1 else 0.0,
-                        'Filter HITS@3': 1.0 if filter_rank <= 3 else 0.0,
-                        'Filter HITS@10': 1.0 if filter_rank <= 10 else 0.0,
+                        'Static Filter MR': filter_rank,
+                        'Static Filter MRR': 1.0 / filter_rank,
+                        'Static Filter HITS@1': 1.0 if filter_rank <= 1 else 0.0,
+                        'Static Filter HITS@3': 1.0 if filter_rank <= 3 else 0.0,
+                        'Static Filter HITS@10': 1.0 if filter_rank <= 10 else 0.0,
+
+                        'Time Filter MR': filter_rank1,
+                        'Time Filter MRR': 1.0 / filter_rank1,
+                        'Time Filter HITS@1': 1.0 if filter_rank1 <= 1 else 0.0,
+                        'Time Filter HITS@3': 1.0 if filter_rank1 <= 3 else 0.0,
+                        'Time Filter HITS@10': 1.0 if filter_rank1 <= 10 else 0.0,
                     })
 
     metrics = {}
@@ -192,11 +207,12 @@ def main(args):
         pin_memory=True
     )
 
-    Config = namedtuple('config', ['n_ent', 'd_model', 'n_rel', 'dropout'])
+    Config = namedtuple('config', ['n_ent', 'd_model', 'n_rel', 'dropout','s_emb_dim','t_emb_dim'])
     config = Config(n_ent=dataset.numEnt() + 1,
                     n_rel=dataset.numRel() * 2,
                     d_model=args.d_model,
-                    dropout=args.dropout)
+                    dropout=args.dropout,
+                    s_emb_dim = 64,t_emb_dim = 36)
     model = NoName(config)
     model.to(device)
 
@@ -225,8 +241,8 @@ def main(args):
 
                 for delta_t in range(args.forecasting_t_win_size):
                     delta_t = delta_t + 1
-                    validDataLoader.dataset.delta_t = delta_t
-                    metrics = test(model, validDataLoader, dataset.skip_dict, device)
+                    testDataLoader.dataset.delta_t = delta_t
+                    metrics = test(model, testDataLoader, dataset, device)
 
                     for mode in metrics.keys():
                         logging.info('Delta_t {} Valid {} : {}'.format(delta_t, mode, metrics[mode]))
@@ -238,7 +254,7 @@ def main(args):
         for delta_t in range(args.forecasting_t_win_size):
             delta_t = delta_t + 1
             testDataLoader.dataset.delta_t = delta_t
-            metrics = test(model, testDataLoader, dataset.skip_dict, device)
+            metrics = test(model, testDataLoader, dataset, device)
             for mode in metrics.keys():
                 logging.info('Delta_t {} Test {} : {}'.format(delta_t, mode, metrics[mode]))
 
