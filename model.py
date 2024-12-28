@@ -82,11 +82,11 @@ class NoName(nn.Module):
 
     def train_forward(self, heads, rels, tails, year, month, day, neg):
         heads_embs1, rels_embs1, x_start1, \
-        heads_embs2, rels_embs2, x_start2 = self.forward(heads, rels, tails,month)
+        heads_embs2, rels_embs2, x_start2 = self.forward(heads, rels, tails,(month + day%month + year % month))
         bs = heads.size(0)
         ts = torch.randint(0, self.steps,(bs,))
-        d_img = torch.cos(self.w.view(1, -1) * (month).unsqueeze(1))
-        d_real = torch.sin(self.w.view(1, -1) * (month).unsqueeze(1))
+        d_img = torch.cos(self.w.view(1, -1) * (month + day%month + year % month).unsqueeze(1))
+        d_real = torch.sin(self.w.view(1, -1) *(month + day%month + year % month).unsqueeze(1))
         #x_t = torch.sqrt(alphas[t]) * obj_embeds + self.betas[t] / torch.sqrt(1 - torch.cumprod(alphas[ : t])) * noise
         noise = torch.randn_like(x_start1)
         pos_x_t1 = self.q_sample(x_start1, ts, noise)
@@ -144,9 +144,9 @@ class NoName(nn.Module):
 
     def test_forward(self, sub, rels, tails, year, month, day):
         heads_embs1, rels_embs1, _, \
-        heads_embs2, rels_embs2, _  = self.forward(sub, rels, tails, month)
-        d_img = torch.cos(self.w.view(1, -1) * (month).unsqueeze(1))
-        d_real = torch.sin(self.w.view(1, -1) * (month).unsqueeze(1))
+        heads_embs2, rels_embs2, _  = self.forward(sub, rels, tails, (month + day%month + year % month))
+        d_img = torch.cos(self.w.view(1, -1) * (month + day%month + year % month).unsqueeze(1))
+        d_real = torch.sin(self.w.view(1, -1) * (month + day%month + year % month).unsqueeze(1))
         condition_emb1 = self.encoder1(heads_embs1 + rels_embs1, d_real)
         condition_emb2 = self.encoder2(heads_embs2 - rels_embs2, d_img)
         bs = heads_embs1.size(0)
